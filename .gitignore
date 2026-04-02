@@ -16,6 +16,20 @@ test_output_*.json
 # Build output (Lambda deployment zips, etc.)
 build/
 
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+terraform.tfvars
+*.tfvars
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+terraform/layer_build/
+terraform/.build/
+
 # User-specific files
 *.rsuser
 *.suo

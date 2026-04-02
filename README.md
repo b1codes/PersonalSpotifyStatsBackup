@@ -8,7 +8,7 @@ This project, "Personal Spotify Stats Backup," is designed to automatically fetc
 
 The project is built on a serverless architecture using AWS services. An Amazon EventBridge rule triggers the AWS Lambda function on a monthly schedule. The Lambda function, written in Python, then orchestrates the data collection and storage process.
 
-It securely retrieves a Spotify refresh token from **AWS Secrets Manager**, uses it to authenticate with the **Spotify Web API**, and fetches your top artists and tracks. The data is then processed and stored in a **MySQL** database for historical analysis.
+It retrieves a Spotify refresh token stored in the **MySQL** database, uses it to authenticate with the **Spotify Web API**, and fetches your top artists and tracks. The data is then processed and stored back in the database for historical analysis.
 
 ```mermaid
 graph TD
@@ -17,9 +17,8 @@ graph TD
             Lambda["lambda_function.py"]
         end
 
-        subgraph "Data & Secrets"
-            SecretsManager["AWS Secrets Manager<br>(Spotify Refresh Token)"]
-            Database["MySQL Database<br>(Top Stats)"]
+        subgraph "Data"
+            Database["MySQL Database<br>(Top Stats + Config)"]
         end
 
         subgraph "Automation"
@@ -32,12 +31,10 @@ graph TD
     end
 
     EventBridge -- "Triggers" --> Lambda
-    Lambda -- "Fetches token" --> SecretsManager
+    Lambda -- "Reads/writes token & data" --> Database
     Lambda -- "Uses token to get data" --> Spotify
-    Lambda -- "Stores data" --> Database
 
     style Lambda fill:#FF9900,stroke:#333,stroke-width:2px
-    style SecretsManager fill:#232F3E,stroke:#FF9900,stroke-width:2px,color:#fff
     style Database fill:#00758F,stroke:#333,stroke-width:2px,color:#fff
     style EventBridge fill:#7B1FA2,stroke:#333,stroke-width:2px,color:#fff
     style Spotify fill:#1DB954,stroke:#333,stroke-width:2px,color:#fff
@@ -51,7 +48,7 @@ graph TD
 - **Automated Monthly Backups:** Runs automatically on a schedule, creating a reliable monthly snapshot of your listening habits.
 - **Top Data Collection:** Fetches your top 50 tracks and artists from the last month via the Spotify Web API.
 - **Top Album Calculation:** Intelligently determines your top albums based on the appearance of their tracks in your top tracks list.
-- **Secure Credential Management:** Leverages **AWS Secrets Manager** to securely store and manage your Spotify API refresh token, avoiding hardcoded secrets.
+- **Secure Credential Management:** Stores the Spotify API refresh token in the MySQL database's `config` table, keeping secrets out of source code.
 - **Persistent Storage:** Saves all collected data into a **MySQL** database, allowing for long-term historical tracking and analysis.
 - **Serverless Design:** Built to run on **AWS Lambda**, eliminating the need to manage servers and ensuring cost-effective operation.
 
@@ -63,12 +60,18 @@ graph TD
 .
 ├── Managers/
 │   ├── SpotifyAuthorizationManager.py  # Handles Spotify API authentication and token management.
-│   ├── SpotifyAPIManager.py          # Manages calls to the Spotify Web API to fetch data.
+│   ├── SpotifyAPIManager.py            # Manages calls to the Spotify Web API to fetch data.
 │   └── DatabaseManager.py              # Handles the connection and data insertion into the MySQL database.
 ├── Types/
 │   ├── Artist.py, Track.py, etc.       # Data classes representing the Spotify objects.
+├── terraform/                          # Infrastructure-as-code for AWS deployment.
+│   ├── main.tf                         # Lambda function, Layer, CloudWatch log group.
+│   ├── variables.tf                    # Input variable declarations.
+│   ├── iam.tf                          # IAM role and policies.
+│   ├── eventbridge.tf                  # Monthly EventBridge schedule.
+│   └── README.md                       # Terraform usage instructions.
 ├── lambda_function.py                  # The main entry point for the AWS Lambda function.
-├── SpotifyRefreshTokenGenerator.py   # Script to generate the initial Spotify refresh token.
+├── SpotifyRefreshTokenGenerator.py     # Script to generate the initial Spotify refresh token.
 ├── requirements.txt                    # Project dependencies.
 ├── sample.env                          # Sample environment variables file.
 └── README.md                           # This file.
@@ -80,7 +83,8 @@ graph TD
 
 ### 1. Prerequisites
 
-- An **AWS Account** with access to Lambda, Secrets Manager, and EventBridge.
+- An **AWS Account** with access to Lambda, RDS, and EventBridge.
+- **Terraform** ≥ 1.0 — [Install guide](https://developer.hashicorp.com/terraform/install).
 - A **MySQL Database** (e.g., Amazon RDS, or any other accessible MySQL instance).
 - **Python 3.9** or later.
 - **Git**.
@@ -117,23 +121,22 @@ The `SpotifyRefreshTokenGenerator.py` script simplifies the process of getting y
 
 ### 5. AWS and Environment Configuration
 
-#### AWS Secrets Manager
+#### Store the Refresh Token in the Database
 
-1.  Navigate to **AWS Secrets Manager** in your AWS console.
-2.  Create a new secret to store your Spotify refresh token.
-3.  Choose **"Other type of secret"** and create a key-value pair. The `SpotifyAPIManager.py` expects the key to be `spotify_refresh_token`:
-    - **Key:** `spotify_refresh_token`
-    - **Value:** `YOUR_REFRESH_TOKEN_FROM_STEP_4`
-4.  Give the secret a name (e.g., `SpotifyRefreshToken`) and note it down.
+The application stores its Spotify refresh token in the MySQL database's `config` table. Insert your initial token:
+
+```sql
+INSERT INTO config (config_key, config_value)
+VALUES ('spotify_refresh_token', 'YOUR_REFRESH_TOKEN_FROM_STEP_4');
+```
 
 #### Environment Variables for Lambda
 
-When you create your Lambda function, you will need to set the following environment variables. You can use the `sample.env` file as a template.
+These are managed automatically by Terraform (see `terraform/terraform.tfvars`). For local development, use the `sample.env` file as a template.
 
 - `CLIENT_ID`: Your Spotify application Client ID.
 - `CLIENT_SECRET`: Your Spotify application Client Secret.
 - `REDIRECT_URI`: The redirect URI you set in the Spotify Developer Dashboard.
-- `SECRET_NAME`: The name of the secret you created in AWS Secrets Manager.
 - `DB_HOST`: The endpoint for your MySQL database.
 - `DB_USERNAME`: Your database username.
 - `DB_PASSWORD`: Your database password.
@@ -142,92 +145,45 @@ When you create your Lambda function, you will need to set the following environ
 
 ---
 
-## Deployment
+## Deployment (Terraform)
 
-### 1. Create a Deployment Package
+Infrastructure is managed with **Terraform**. See [`terraform/README.md`](terraform/README.md) for full details.
 
-The following script packages the Python code and its dependencies into a `.zip` file suitable for uploading to AWS Lambda.
-
-**`deploy.sh`**
-```bash
-#!/bin/bash
-
-# Exit immediately if a command exits with a non-zero status.
-set -e
-
-# Define variables
-PACKAGE_DIR="package"
-ZIP_FILE="deployment_package.zip"
-
-echo "--- Starting deployment packaging ---"
-
-# Create a clean directory for the package
-echo "Creating a clean package directory..."
-rm -rf $PACKAGE_DIR $ZIP_FILE
-mkdir -p $PACKAGE_DIR
-
-# Install dependencies into the package directory
-echo "Installing dependencies from requirements.txt..."
-pip install --target $PACKAGE_DIR -r requirements.txt
-
-# Copy the Lambda function and other necessary Python files
-echo "Copying source files..."
-cp lambda_function.py $PACKAGE_DIR/
-cp -r Managers $PACKAGE_DIR/
-cp -r Types $PACKAGE_DIR/
-
-# Create the deployment zip file
-echo "Creating deployment package: $ZIP_FILE..."
-cd $PACKAGE_DIR
-zip -r ../$ZIP_FILE .
-cd ..
-
-# Clean up the package directory
-echo "Cleaning up..."
-rm -rf $PACKAGE_DIR
-
-echo "--- Deployment package created successfully: $ZIP_FILE ---"
-```
-
-Make the script executable and run it:
-```bash
-chmod +x deploy.sh
-./deploy.sh
-```
-
-### 2. Deploy to AWS Lambda
-
-You can create and update your Lambda function using the AWS Management Console or the AWS CLI.
-
-#### Using AWS CLI
-
-**To create the Lambda function (run this once):**
-*(Replace the placeholder values with your own information)*
+### First-Time Setup
 
 ```bash
-aws lambda create-function \
-  --function-name PersonalSpotifyStatsBackup \
-  --runtime python3.9 \
-  --role arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/YOUR_LAMBDA_EXECUTION_ROLE \
-  --handler lambda_function.lambda_handler \
-  --zip-file fileb://deployment_package.zip \
-  --environment "Variables={CLIENT_ID=your_client_id,CLIENT_SECRET=your_client_secret,REDIRECT_URI=your_redirect_uri,SECRET_NAME=your_secret_name,DB_HOST=your_db_host,DB_USERNAME=your_db_username,DB_PASSWORD=your_db_password,DB_NAME=your_db_name,DB_PORT=3306}" \
-  --timeout 60 \
-  --memory-size 256
+cd terraform/
+
+# 1. Fill in your VPC/subnet/security group IDs in terraform.tfvars
+#    (look for the TODO comments)
+
+# 2. Initialize Terraform
+terraform init
+
+# 3. Import your existing Lambda function
+terraform import aws_lambda_function.spotify_backup PersonalSpotifyStatsBackup
+
+# 4. Preview and apply
+terraform plan
+terraform apply
 ```
 
-**To update the function's code:**
-*(This is the command you will use most often to deploy new versions of your code)*
+### Deploying Code Changes
 
 ```bash
-aws lambda update-function-code \
-  --function-name PersonalSpotifyStatsBackup \
-  --zip-file fileb://deployment_package.zip
+cd terraform/
+terraform apply
 ```
 
-### 3. Schedule the Lambda Function
+Terraform automatically packages your code, uploads it to Lambda, and updates the function.
 
-To automate the backup, create an **Amazon EventBridge** rule that triggers your Lambda function on a schedule (e.g., once a month).
+### What Terraform Manages
+
+- **Lambda Function** with VPC networking and environment variables
+- **Lambda Layer** for Python dependencies (from `requirements.txt`)
+- **IAM Role** with least-privilege policies
+- **EventBridge Rule** for the monthly schedule
+- **CloudWatch Log Group** with configurable retention
 
 ---
 

@@ -1,9 +1,12 @@
 #!/bin/bash
 # ============================================================
-# Build Lambda Deployment Zip
-# Packages the project into a zip file ready to upload to
-# AWS Lambda. This script only creates the artifact — it does
-# NOT deploy anything.
+# Build Lambda Deployment Zip  [DEPRECATED]
+#
+# ⚠️  This script is deprecated. Use Terraform instead:
+#     cd terraform/ && terraform apply
+#
+# See terraform/README.md for full instructions.
+# This script is kept as a manual fallback only.
 # ============================================================
 
 set -e
