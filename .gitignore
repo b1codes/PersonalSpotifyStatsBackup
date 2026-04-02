@@ -13,6 +13,9 @@ authorization.txt
 # Test output files
 test_output_*.json
 
+# Build output (Lambda deployment zips, etc.)
+build/
+
 # User-specific files
 *.rsuser
 *.suo
