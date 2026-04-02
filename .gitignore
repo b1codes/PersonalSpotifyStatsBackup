@@ -10,6 +10,9 @@ SpotifyStatsEnv/
 .env
 authorization.txt
 
+# Test output files
+test_output_*.json
+
 # User-specific files
 *.rsuser
 *.suo

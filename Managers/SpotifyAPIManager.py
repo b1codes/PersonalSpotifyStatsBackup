@@ -1,12 +1,11 @@
 import json
+import logging
 import requests
 import os
 import time
 import string
 import random
 import base64
-import boto3
-from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 from Types.Album import Album
@@ -14,23 +13,38 @@ from Types.Artist import Artist
 from Types.Image import Image
 from Types.Track import Track
 
+logger = logging.getLogger(__name__)
+
 load_dotenv()
 CLIENT_ID = os.getenv('CLIENT_ID')
 CLIENT_SECRET = os.getenv('CLIENT_SECRET')
 REDIRECT_URI = os.getenv('REDIRECT_URI')
     
 class SpotifyAPIManager():
-    def __init__(self):     
+    def __init__(self, database_manager):
+        logger.info("Initializing SpotifyAPIManager...")
         self.state = self.generate_random_state(16)
         self.auth_code = ''
         self.access_token = ''
         self.token_type = ''
         self.refresh_token = ''
-        self.secrets_client = boto3.client("secretsmanager")
-        self.secret_name = os.getenv('SECRET_NAME')
-        self.refresh_token = self.get_secret()
-        print(f"--> DEBUG: Pulled this refresh token from AWS: {self.refresh_token}") # <-- ADD THIS LINE
+        self.database_manager = database_manager
+
+        logger.debug("CLIENT_ID loaded: %s", "Yes" if CLIENT_ID else "MISSING")
+        logger.debug("CLIENT_SECRET loaded: %s", "Yes" if CLIENT_SECRET else "MISSING")
+        logger.debug("REDIRECT_URI loaded: %s", REDIRECT_URI or "MISSING")
+
+        logger.info("Retrieving refresh token from database...")
+        self.refresh_token = self.database_manager.get_refresh_token()
+        if self.refresh_token:
+            masked_token = self.refresh_token[:8] + "..." + self.refresh_token[-4:] if len(self.refresh_token) > 12 else "***"
+            logger.debug("Refresh token retrieved (masked): %s", masked_token)
+        else:
+            logger.error("Failed to retrieve refresh token from database!")
+
+        logger.info("Exchanging refresh token for access token...")
         self.get_access_token_from_refresh_token()
+        logger.info("SpotifyAPIManager initialized successfully.")
 
         
     def generate_random_state(self, length):
@@ -40,6 +54,7 @@ class SpotifyAPIManager():
         
 
     def get_access_token(self, code): 
+        logger.info("Requesting access token with authorization code...")
         url = 'https://accounts.spotify.com/api/token'
         client_string = f"{CLIENT_ID}:{CLIENT_SECRET}"
         client_string_bytes = client_string.encode("ascii") 
@@ -56,50 +71,37 @@ class SpotifyAPIManager():
             'code' : code
         } 
         try:
+            logger.debug("POST %s (grant_type=authorization_code)", url)
             access_response = requests.post(url, params=params, headers=headers)
+            logger.debug("Response status: %d", access_response.status_code)
 
             if access_response.status_code == 200:
                 access_json = access_response.json()
                 self.access_token = access_json['access_token']
                 self.token_type = access_json['token_type']
                 self.refresh_token = access_json['refresh_token']
-                print(self.refresh_token)
+                logger.info("Access token obtained successfully via authorization code.")
+                logger.debug("Token type: %s", self.token_type)
             else:
-                print('Error:', access_response.status_code)
+                logger.error("Failed to get access token. Status: %d, Response: %s",
+                             access_response.status_code, access_response.text)
                 return None
         except requests.exceptions.RequestException as e:
-            print('Error:', e)
+            logger.error("Request exception during access token exchange: %s", e)
             return None
         
-    def get_secret(self):
-        try:
-            response = self.secrets_client.get_secret_value(SecretId=self.secret_name)
-            secret = json.loads(response['SecretString'])
-            return secret.get('spotify_refresh_token')
-        except Exception as e:
-            print(f"Error retrieving secret: {e}")
-            return None
-        
-    def update_secret(self, new_token):
-        try:
-            self.secrets_client.update_secret(
-                SecretId=self.secret_name,
-                SecretString=json.dumps({'spotify_refresh_token': new_token})
-            )
-            print("Secret updated successfully.")
-        except Exception as e:
-            print(f"Error updating secret: {e}")
+
         
     def get_access_token_from_refresh_token(self): 
+        logger.info("Requesting new access token using refresh token...")
         url = 'https://accounts.spotify.com/api/token'
         client_string = f"{CLIENT_ID}:{CLIENT_SECRET}"
         client_string_bytes = client_string.encode("ascii") 
         
         base64_bytes = base64.b64encode(client_string_bytes) 
         base64_string = base64_bytes.decode("ascii") 
-        refresh_token_string = self.get_secret()
-        if not refresh_token_string:
-            print("No refresh token found. Please authenticate first.")
+        if not self.refresh_token:
+            logger.error("No refresh token available. Cannot obtain access token.")
             return None
         headers = { 
             'Authorization' : 'Basic ' + base64_string,
@@ -111,23 +113,32 @@ class SpotifyAPIManager():
             'refresh_token' : self.refresh_token
         } 
         try:
+            logger.debug("POST %s (grant_type=refresh_token)", url)
             access_response = requests.post(url, params=params, headers=headers)
+            logger.debug("Response status: %d", access_response.status_code)
 
             if access_response.status_code == 200:
                 access_json = access_response.json()
                 self.access_token = access_json['access_token']
                 self.token_type = access_json['token_type']
+                logger.info("Access token obtained successfully via refresh token.")
+                logger.debug("Token type: %s", self.token_type)
                 if 'refresh_token' in access_json:
+                    logger.info("New refresh token received from Spotify — updating in database.")
                     self.refresh_token = access_json['refresh_token']
-                    self.update_secret(self.refresh_token)
+                    self.database_manager.update_refresh_token(self.refresh_token)
+                else:
+                    logger.debug("No new refresh token in response (existing one is still valid).")
             else:
-                print('Error:', access_response.status_code)
+                logger.error("Failed to refresh access token. Status: %d, Response: %s",
+                             access_response.status_code, access_response.text)
                 return None
         except requests.exceptions.RequestException as e:
-            print('Error:', e)
+            logger.error("Request exception during refresh token exchange: %s", e)
             return None
 
     def get_top_tracks(self):
+        logger.info("Fetching top tracks from Spotify API...")
         url = 'https://api.spotify.com/v1/me/top/tracks'
         params = {
             'time_range' : 'short_term',
@@ -139,11 +150,17 @@ class SpotifyAPIManager():
             'Content-Type': 'application/json' 
         }
         try:
+            logger.debug("GET %s (time_range=short_term, limit=50)", url)
             top_tracks_response = requests.get(url, headers=headers, params=params)
+            logger.debug("Response status: %d", top_tracks_response.status_code)
+
             if top_tracks_response.status_code == 200:
                 top_tracks_json = top_tracks_response.json()
+                items = top_tracks_json.get('items', [])
+                logger.info("Received %d tracks from Spotify API.", len(items))
+
                 top_tracks_list = []
-                for track in top_tracks_json['items']:
+                for i, track in enumerate(items):
                     artists = []
                     for artist in track['artists']:
                         artists.append(Artist(name=artist['name'], artist_id=artist['id']))
@@ -159,15 +176,29 @@ class SpotifyAPIManager():
                     top_tracks_list.append(Track(name=track['name'], track_id=track['id'], 
                         duration=track['duration_ms'], explicit=track['explicit'], disc_number=track['disc_number'], 
                         track_number=track['track_number'], artists=artists, album=album, popularity=track['popularity']))
+                    logger.debug("  #%d: '%s' by %s", i + 1, track['name'],
+                                 ', '.join(a['name'] for a in track['artists']))
+
+                logger.info("Successfully parsed %d tracks.", len(top_tracks_list))
                 return top_tracks_list
+            elif top_tracks_response.status_code == 401:
+                logger.error("Spotify API returned 401 Unauthorized — access token may be expired or invalid.")
+                logger.debug("Response body: %s", top_tracks_response.text)
+                return None
+            elif top_tracks_response.status_code == 429:
+                retry_after = top_tracks_response.headers.get('Retry-After', 'unknown')
+                logger.error("Spotify API rate limit hit (429). Retry after: %s seconds.", retry_after)
+                return None
             else:
-                print('Spotify API Error:', top_tracks_response.status_code)
+                logger.error("Spotify API error fetching top tracks. Status: %d, Response: %s",
+                             top_tracks_response.status_code, top_tracks_response.text)
                 return None
         except requests.exceptions.RequestException as e:
-            print('Spotify API Error:', e)
+            logger.error("Request exception fetching top tracks: %s", e)
             return None
 
     def get_top_artists(self):
+        logger.info("Fetching top artists from Spotify API...")
         url = 'https://api.spotify.com/v1/me/top/artists'
         headers = { 
             'Authorization' : f"{self.token_type} {self.access_token}",
@@ -179,11 +210,17 @@ class SpotifyAPIManager():
             'offset' : '0'
         } 
         try:
+            logger.debug("GET %s (time_range=short_term, limit=50)", url)
             top_artists_response = requests.get(url, headers=headers, params=params)
+            logger.debug("Response status: %d", top_artists_response.status_code)
+
             if top_artists_response.status_code == 200:
                 top_artists_json = top_artists_response.json()
+                items = top_artists_json.get('items', [])
+                logger.info("Received %d artists from Spotify API.", len(items))
+
                 top_artists_list = []
-                for artist in top_artists_json['items']:
+                for i, artist in enumerate(items):
                     artist_images = []
                     for image in artist['images']:
                         artist_images.append(Image(url=image['url'], height=image['height'], width=image['width']))
@@ -192,11 +229,23 @@ class SpotifyAPIManager():
                         genres_list.append(genre)
                     top_artists_list.append(Artist(name=artist['name'], artist_id=artist['id'], genres=genres_list, 
                         images=artist_images, popularity=artist['popularity']))
+                    logger.debug("  #%d: '%s' (genres: %s)", i + 1, artist['name'],
+                                 ', '.join(artist['genres']) if artist['genres'] else 'none')
+
+                logger.info("Successfully parsed %d artists.", len(top_artists_list))
                 return top_artists_list
+            elif top_artists_response.status_code == 401:
+                logger.error("Spotify API returned 401 Unauthorized — access token may be expired or invalid.")
+                logger.debug("Response body: %s", top_artists_response.text)
+                return None
+            elif top_artists_response.status_code == 429:
+                retry_after = top_artists_response.headers.get('Retry-After', 'unknown')
+                logger.error("Spotify API rate limit hit (429). Retry after: %s seconds.", retry_after)
+                return None
             else:
-                print('Spotify API Error:', top_artists_response.status_code)
+                logger.error("Spotify API error fetching top artists. Status: %d, Response: %s",
+                             top_artists_response.status_code, top_artists_response.text)
                 return None
         except requests.exceptions.RequestException as e:
-            print('Spotify API Error:', e)
+            logger.error("Request exception fetching top artists: %s", e)
             return None 
-        
