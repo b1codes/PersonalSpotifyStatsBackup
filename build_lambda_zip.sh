@@ -59,7 +59,7 @@ echo ""
 echo "✅ Deployment package created: $ZIP_PATH ($ZIP_SIZE)"
 echo ""
 echo "📋 Contents:"
-unzip -l "$ZIP_PATH" | tail -n +4 | head -n -2 | awk '{print "   " $4}'
+unzip -l "$ZIP_PATH" | tail -n +4 | sed '$d' | sed '$d' | awk '{print "   " $4}'
 echo ""
 echo "🚀 Next steps:"
 echo "   1. Upload to Lambda via AWS Console, or:"
