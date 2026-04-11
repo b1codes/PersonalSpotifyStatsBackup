@@ -55,7 +55,9 @@ zip -r "$ZIP_PATH" . \
   -x "botocore/*" \
   -x "botocore-*/*" \
   -x "s3transfer/*" \
-  -x "s3transfer-*/*"
+  -x "s3transfer-*/*" \
+  -x "terraform/*" \
+  -x "scratch/*"
 
 ZIP_SIZE=$(du -h "$ZIP_PATH" | cut -f1)
 echo ""
