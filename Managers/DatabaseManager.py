@@ -149,18 +149,17 @@ class DatabaseManager:
         ON DUPLICATE KEY UPDATE name=VALUES(name);
         """
         album_list = []
-        for rank, albums in top_albums_of_the_month.top_albums.items():
-            for album in albums:
-                images_list = json.dumps([image.url for image in album.images])
-                artist_ids = json.dumps([artist.artist_id for artist in album.artists])
-                album_data = (
-                    top_albums_of_the_month.month, top_albums_of_the_month.year, rank,
-                    album.name, album.album_id, album.album_type, album.release_date,
-                    images_list, artist_ids
-                )
-                album_list.append(album_data)
-                logger.debug("  Prepared album (rank %d): '%s' (id: %s, type: %s)",
-                             rank, album.name, album.album_id, album.album_type)
+        for rank, album in top_albums_of_the_month.top_albums.items():
+            images_list = json.dumps([image.url for image in album.images])
+            artist_ids = json.dumps([artist.artist_id for artist in album.artists])
+            album_data = (
+                top_albums_of_the_month.month, top_albums_of_the_month.year, rank,
+                album.name, album.album_id, album.album_type, album.release_date,
+                images_list, artist_ids
+            )
+            album_list.append(album_data)
+            logger.debug("  Prepared album #%d: '%s' (id: %s, type: %s)",
+                         rank, album.name, album.album_id, album.album_type)
 
         logger.debug("Executing batch insert for %d albums...", len(album_list))
         self.cursor.executemany(sql, album_list)

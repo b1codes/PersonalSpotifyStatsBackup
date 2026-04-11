@@ -5,46 +5,51 @@ from Types.Album import Album
 from Types.Track import Track
 
 class MonthlyTopAlbums:
-    def __init__(self, top_tracks : list[Track]):
+    def __init__(self, top_tracks : list[Track], month: int = None, year: int = None):
         top_tracks_dict = {}
         if top_tracks:
             for track in top_tracks:
                 top_tracks_dict[top_tracks.index(track) + 1] = track
         
         self.top_tracks : dict[int, Track] = top_tracks_dict
-        prev = date.today().replace(day=1) - timedelta(days=1)
-        self.month = prev.month
-        self.year = prev.year
         
-        all_albums_list : list[Album] = []
+        if month is not None and year is not None:
+            self.month = month
+            self.year = year
+        else:
+            prev = date.today().replace(day=1) - timedelta(days=1)
+            self.month = prev.month
+            self.year = prev.year
+        
+        # 1. Count occurrences and sum standings for each album
+        album_stats: dict[str, dict] = {}
         if top_tracks:
-            for track in top_tracks:
-                all_albums_list.append(track.album)
+            for index, track in enumerate(top_tracks):
+                standing = index + 1
+                album_id = track.album.album_id
+                if album_id not in album_stats:
+                    album_stats[album_id] = {
+                        "album": track.album,
+                        "count": 0,
+                        "sum_standing": 0
+                    }
+                album_stats[album_id]["count"] += 1
+                album_stats[album_id]["sum_standing"] += standing
         
-        album_ids_and_counts : dict[str, int] = {}
-        for album in all_albums_list:
-            if album.album_id not in album_ids_and_counts.keys():
-                album_ids_and_counts[album.album_id] = 1
-            else:
-                album_ids_and_counts[album.album_id] += 1
+        # 2. Filter for albums with > 1 track and prepare for sorting
+        eligible_albums = [
+            stats for stats in album_stats.values() if stats["count"] > 1
+        ]
         
-        counts_and_albums : dict[int, list[Album]] = {}
-        for album_id, count in album_ids_and_counts.items():
-            if count > 1:
-                album_to_add = next((x for x in all_albums_list if x.album_id == album_id), None)
-                if album_to_add is not None:
-                    if count not in counts_and_albums:
-                        counts_and_albums[count] = [album_to_add]
-                    else:
-                        # Correctly append to the list without reassigning
-                        counts_and_albums[count].append(album_to_add)
+        # 3. Sort albums: 
+        #    Primary: count (DESC)
+        #    Secondary: sum_standing (ASC - lower is better)
+        #    Tertiary: album name (ASC)
+        eligible_albums.sort(key=lambda x: (-x["count"], x["sum_standing"], x["album"].name))
         
-        ranks_and_sorted_albums : dict[int, list[Album]] = {}
-        # Sort the ranks (counts) in descending order
-        for rank in sorted(counts_and_albums.keys(), reverse=True):
-            # Get the list of albums for the current rank
-            albums_for_rank = counts_and_albums[rank]
-            # Sort that specific list of albums by name
-            ranks_and_sorted_albums[rank] = sorted(albums_for_rank, key=lambda album: album.name)
+        # 4. Assign ranks 1..N
+        ranked_albums: dict[int, Album] = {}
+        for rank, stats in enumerate(eligible_albums, start=1):
+            ranked_albums[rank] = stats["album"]
             
-        self.top_albums : dict[int, list[Album]] = ranks_and_sorted_albums.copy()
+        self.top_albums : dict[int, Album] = ranked_albums

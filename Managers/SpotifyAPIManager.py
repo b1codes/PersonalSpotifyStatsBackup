@@ -195,8 +195,6 @@ class SpotifyAPIManager():
                 return None
         except requests.exceptions.RequestException as e:
             logger.error("Request exception fetching top tracks: %s", e)
-            return None
-
     def get_top_artists(self):
         logger.info("Fetching top artists from Spotify API...")
         url = 'https://api.spotify.com/v1/me/top/artists'
@@ -249,3 +247,90 @@ class SpotifyAPIManager():
         except requests.exceptions.RequestException as e:
             logger.error("Request exception fetching top artists: %s", e)
             return None 
+
+    def get_tracks_batch(self, track_ids: list[str]):
+        """Fetches metadata for up to 50 tracks in a single batch."""
+        if not track_ids:
+            return []
+        
+        url = 'https://api.spotify.com/v1/tracks'
+        headers = { 
+            'Authorization' : f"{self.token_type} {self.access_token}",
+            'Content-Type': 'application/json' 
+        }
+        params = {
+            'ids': ','.join(track_ids)
+        }
+        
+        try:
+            logger.debug("GET %s (ids=%d)", url, len(track_ids))
+            response = requests.get(url, headers=headers, params=params)
+            
+            if response.status_code == 200:
+                tracks_json = response.json()
+                items = tracks_json.get('tracks', [])
+                
+                track_list = []
+                for track in items:
+                    if not track: continue # Handle potential nulls in response
+                    artists = [Artist(name=a['name'], artist_id=a['id']) for a in track['artists']]
+                    album_images = [Image(url=img['url'], height=img['height'], width=img['width']) 
+                                   for img in track['album']['images']]
+                    album_artists = [Artist(name=a['name'], artist_id=a['id']) for a in track['album']['artists']]
+                    album = Album(name=track['album']['name'], album_id=track['album']['id'], 
+                        album_type=track['album']['album_type'], release_date=track['album']['release_date'], 
+                        images=album_images, artists=album_artists)
+                    
+                    track_list.append(Track(name=track['name'], track_id=track['id'], 
+                        duration=track['duration_ms'], explicit=track['explicit'], disc_number=track['disc_number'], 
+                        track_number=track['track_number'], artists=artists, album=album, popularity=track['popularity']))
+                
+                return track_list
+            else:
+                logger.error("Spotify API error in batch tracks. Status: %d, Response: %s",
+                             response.status_code, response.text)
+                return []
+        except requests.exceptions.RequestException as e:
+            logger.error("Request exception in batch tracks: %s", e)
+            return []
+
+    def get_artists_batch(self, artist_ids: list[str]):
+        """Fetches metadata for up to 50 artists in a single batch."""
+        if not artist_ids:
+            return []
+            
+        url = 'https://api.spotify.com/v1/artists'
+        headers = { 
+            'Authorization' : f"{self.token_type} {self.access_token}",
+            'Content-Type': 'application/json' 
+        }
+        params = {
+            'ids': ','.join(artist_ids)
+        }
+        
+        try:
+            logger.debug("GET %s (ids=%d)", url, len(artist_ids))
+            response = requests.get(url, headers=headers, params=params)
+            
+            if response.status_code == 200:
+                artists_json = response.json()
+                items = artists_json.get('artists', [])
+                
+                artist_list = []
+                for artist in items:
+                    if not artist: continue
+                    artist_images = [Image(url=img['url'], height=img['height'], width=img['width']) 
+                                    for img in artist['images']]
+                    genres = artist.get('genres', [])
+                    artist_list.append(Artist(name=artist['name'], artist_id=artist['id'], genres=genres, 
+                        images=artist_images, popularity=artist['popularity']))
+                
+                return artist_list
+            else:
+                logger.error("Spotify API error in batch artists. Status: %d, Response: %s",
+                             response.status_code, response.text)
+                return []
+        except requests.exceptions.RequestException as e:
+            logger.error("Request exception in batch artists: %s", e)
+            return []
+ None 
