@@ -6,9 +6,11 @@
 # Ignore virtual environment directory
 SpotifyStatsEnv/
 
-# Private files
+# Private & Data files
 .env
 authorization.txt
+spotify_data/
+*.log
 
 # Test output files
 test_output_*.json

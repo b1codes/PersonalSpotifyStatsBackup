@@ -97,7 +97,16 @@ class DatabaseManager:
         INSERT INTO tracks (month, year, standing, name, track_id, duration_ms, is_explicit,
         disc_number, track_number, popularity, album_id, artist_ids)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE name=VALUES(name), popularity=VALUES(popularity);
+        ON DUPLICATE KEY UPDATE 
+            name=VALUES(name), 
+            track_id=VALUES(track_id),
+            duration_ms=VALUES(duration_ms),
+            is_explicit=VALUES(is_explicit),
+            disc_number=VALUES(disc_number),
+            track_number=VALUES(track_number),
+            popularity=VALUES(popularity),
+            album_id=VALUES(album_id),
+            artist_ids=VALUES(artist_ids);
         """
         track_list = []
         for rank, track in top_tracks_of_the_month.top_tracks.items():
@@ -122,7 +131,12 @@ class DatabaseManager:
         sql = """
         INSERT INTO artists (month, year, standing, name, artist_id, popularity, genres, images)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE name=VALUES(name), popularity=VALUES(popularity);
+        ON DUPLICATE KEY UPDATE 
+            name=VALUES(name), 
+            artist_id=VALUES(artist_id),
+            popularity=VALUES(popularity),
+            genres=VALUES(genres),
+            images=VALUES(images);
         """
         artist_list = []
         for rank, artist in top_artists_of_the_month.top_artists.items():
@@ -146,7 +160,13 @@ class DatabaseManager:
         sql = """
         INSERT INTO albums (month, year, standing, name, album_id, album_type, release_date, images, artist_ids)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE name=VALUES(name);
+        ON DUPLICATE KEY UPDATE 
+            name=VALUES(name), 
+            album_id=VALUES(album_id),
+            album_type=VALUES(album_type),
+            release_date=VALUES(release_date),
+            images=VALUES(images),
+            artist_ids=VALUES(artist_ids);
         """
         album_list = []
         for rank, album in top_albums_of_the_month.top_albums.items():

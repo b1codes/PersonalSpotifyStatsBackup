@@ -246,8 +246,7 @@ class SpotifyAPIManager():
                 return None
         except requests.exceptions.RequestException as e:
             logger.error("Request exception fetching top artists: %s", e)
-            return None 
-
+            return
     def get_tracks_batch(self, track_ids: list[str]):
         """Fetches metadata for up to 50 tracks in a single batch."""
         if not track_ids:
@@ -333,4 +332,3 @@ class SpotifyAPIManager():
         except requests.exceptions.RequestException as e:
             logger.error("Request exception in batch artists: %s", e)
             return []
- None 
