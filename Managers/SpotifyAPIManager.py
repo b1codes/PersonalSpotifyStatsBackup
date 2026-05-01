@@ -317,7 +317,8 @@ class SpotifyAPIManager():
                 
                 artist_list = []
                 for artist in items:
-                    if not artist: continue
+                    if not artist:
+                        continue
                     artist_images = [Image(url=img['url'], height=img['height'], width=img['width']) 
                                     for img in artist['images']]
                     genres = artist.get('genres', [])
