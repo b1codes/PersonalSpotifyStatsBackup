@@ -109,5 +109,12 @@ When you are ready to deploy the changes to your AWS account, run the following 
      --region "us-east-2"
    ```
 
-3. **Decommission MySQL:**
+3. **Migrate your existing MySQL data to AWS DynamoDB:**
+   To ensure you don't lose any of your historical backup statistics, we created a comprehensive migration utility [migrate_history_to_dynamodb.py](file:///Users/brandonlamer-connolly/code/PersonalSpotifyStatsBackup/scripts/migrate_history_to_dynamodb.py). Run this script from the project root while the RDS MySQL database is still active:
+   ```bash
+   PYTHONPATH=. python3 scripts/migrate_history_to_dynamodb.py
+   ```
+   This will automatically pull all records from `tracks`, `artists`, and `albums` MySQL tables, re-map them to the new NoSQL layout, and batch-write them directly into your new serverless DynamoDB tables in AWS!
+
+4. **Decommission MySQL:**
    Once verified in the cloud, you can safely **delete your AWS RDS instance, VPC, subnets, and NAT Gateways** to permanently cut your AWS monthly bill!
