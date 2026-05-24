@@ -11,6 +11,7 @@ SpotifyStatsEnv/
 authorization.txt
 spotify_data/
 *.log
+scratch/
 
 # Test output files
 test_output_*.json
