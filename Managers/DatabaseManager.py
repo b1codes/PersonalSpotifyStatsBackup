@@ -1,8 +1,9 @@
 import logging
-import mysql.connector
 import os
-from dotenv import load_dotenv
+import boto3
 import json
+from datetime import datetime
+from dotenv import load_dotenv
 
 from Types.MonthlyTopAlbums import MonthlyTopAlbums
 from Types.MonthlyTopArtists import MonthlyTopArtists
@@ -14,174 +15,158 @@ load_dotenv()
 
 class DatabaseManager:
     def __init__(self):
-        db_host = os.getenv('DB_HOST')
-        db_user = os.getenv('DB_USERNAME')
-        db_name = os.getenv('DB_NAME')
-        db_port = os.getenv('DB_PORT')
+        region_name = os.getenv('AWS_DEFAULT_REGION', 'us-east-2')
+        logger.info("Initializing DatabaseManager (DynamoDB for stats, Secrets Manager for token) in region %s...", region_name)
+        
+        # Load configuration from environment variables
+        self.secret_name = os.getenv('SECRET_NAME', 'PersonalSpotifyStatsBackup-refresh-token')
+        self.tracks_table_name = os.getenv('DYNAMODB_TABLE_TRACKS', 'PersonalSpotifyStatsBackup-tracks')
+        self.artists_table_name = os.getenv('DYNAMODB_TABLE_ARTISTS', 'PersonalSpotifyStatsBackup-artists')
+        self.albums_table_name = os.getenv('DYNAMODB_TABLE_ALBUMS', 'PersonalSpotifyStatsBackup-albums')
 
-        logger.info("Connecting to MySQL database...")
-        logger.debug("DB_HOST: %s", db_host or "MISSING")
-        logger.debug("DB_USERNAME: %s", db_user or "MISSING")
-        logger.debug("DB_NAME: %s", db_name or "MISSING")
-        logger.debug("DB_PORT: %s", db_port or "MISSING")
-        logger.debug("DB_PASSWORD: %s", "set" if os.getenv('DB_PASSWORD') else "MISSING")
+        logger.debug("SECRET_NAME: %s", self.secret_name)
+        logger.debug("DYNAMODB_TABLE_TRACKS: %s", self.tracks_table_name)
+        logger.debug("DYNAMODB_TABLE_ARTISTS: %s", self.artists_table_name)
+        logger.debug("DYNAMODB_TABLE_ALBUMS: %s", self.albums_table_name)
 
         try:
-            self.db = mysql.connector.connect(
-                host=db_host,
-                user=db_user,
-                password=os.getenv('DB_PASSWORD'),
-                database=db_name,
-                port=db_port
-            )
-            self.cursor = self.db.cursor()
-            logger.info("Successfully connected to MySQL database '%s' at %s:%s.", db_name, db_host, db_port)
-        except mysql.connector.Error as err:
-            logger.error("Failed to connect to MySQL database: %s", err)
+            self.dynamodb = boto3.resource('dynamodb', region_name=region_name)
+            self.secrets_client = boto3.client('secretsmanager', region_name=region_name)
+            
+            self.tracks_table = self.dynamodb.Table(self.tracks_table_name)
+            self.artists_table = self.dynamodb.Table(self.artists_table_name)
+            self.albums_table = self.dynamodb.Table(self.albums_table_name)
+            logger.info("Successfully initialized AWS DynamoDB and Secrets Manager interfaces.")
+        except Exception as e:
+            logger.error("Failed to connect to AWS services: %s", e)
             raise
 
-        self._ensure_config_table()
-
-    def _ensure_config_table(self):
-        """Creates the config table if it doesn't already exist."""
-        logger.debug("Ensuring 'config' table exists...")
-        self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS config (
-                config_key VARCHAR(255) PRIMARY KEY,
-                config_value TEXT NOT NULL,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )
-        """)
-        self.db.commit()
-        logger.debug("'config' table ready.")
-
     def get_refresh_token(self):
-        """Retrieves the Spotify refresh token from the config table."""
+        """Retrieves the Spotify refresh token from AWS Secrets Manager."""
         try:
-            self.cursor.execute(
-                "SELECT config_value FROM config WHERE config_key = %s",
-                ('spotify_refresh_token',)
-            )
-            row = self.cursor.fetchone()
-            if row:
-                token = row[0]
-                masked = token[:8] + "..." + token[-4:] if len(token) > 12 else "***"
-                logger.info("Retrieved refresh token from database (masked: %s).", masked)
-                return token
-            else:
-                logger.error("No refresh token found in config table.")
-                return None
-        except mysql.connector.Error as err:
-            logger.error("Error reading refresh token from database: %s", err)
+            logger.debug("Fetching secret '%s' from AWS Secrets Manager...", self.secret_name)
+            response = self.secrets_client.get_secret_value(SecretId=self.secret_name)
+            if 'SecretString' in response:
+                secret_str = response['SecretString']
+                # Check if it is a JSON object or raw string
+                try:
+                    secret_dict = json.loads(secret_str)
+                    token = secret_dict.get('spotify_refresh_token')
+                except json.JSONDecodeError:
+                    token = secret_str
+                
+                if token:
+                    masked = token[:8] + "..." + token[-4:] if len(token) > 12 else "***"
+                    logger.info("Retrieved refresh token from Secrets Manager (masked: %s).", masked)
+                    return token
+            logger.error("No refresh token found in secret '%s'.", self.secret_name)
+            return None
+        except Exception as e:
+            logger.error("Error reading refresh token from Secrets Manager: %s", e)
             return None
 
     def update_refresh_token(self, new_token):
-        """Stores or updates the Spotify refresh token in the config table."""
+        """Stores or updates the Spotify refresh token in AWS Secrets Manager."""
         try:
-            self.cursor.execute(
-                """INSERT INTO config (config_key, config_value)
-                   VALUES (%s, %s)
-                   ON DUPLICATE KEY UPDATE config_value = VALUES(config_value)""",
-                ('spotify_refresh_token', new_token)
+            logger.info("Updating refresh token in Secrets Manager secret '%s'...", self.secret_name)
+            
+            # Read existing secret first to preserve any other keys if it's JSON
+            try:
+                response = self.secrets_client.get_secret_value(SecretId=self.secret_name)
+                secret_str = response.get('SecretString', '')
+                secret_dict = json.loads(secret_str)
+                secret_dict['spotify_refresh_token'] = new_token
+                new_secret_str = json.dumps(secret_dict)
+            except Exception:
+                # Fallback: create fresh JSON structure
+                new_secret_str = json.dumps({'spotify_refresh_token': new_token})
+                
+            self.secrets_client.put_secret_value(
+                SecretId=self.secret_name,
+                SecretString=new_secret_str
             )
-            self.db.commit()
-            logger.info("Refresh token updated in database.")
-        except mysql.connector.Error as err:
-            logger.error("Error updating refresh token in database: %s", err)
+            logger.info("Refresh token updated in AWS Secrets Manager.")
+        except Exception as e:
+            logger.error("Error updating refresh token in Secrets Manager: %s", e)
             raise
 
     def insert_top_tracks_into_db(self, top_tracks_of_the_month: MonthlyTopTracks):
-        logger.info("Inserting top tracks for %d/%d into database...",
-                     top_tracks_of_the_month.month, top_tracks_of_the_month.year)
-        sql = """
-        INSERT INTO tracks (month, year, standing, name, track_id, duration_ms, is_explicit,
-        disc_number, track_number, popularity, album_id, artist_ids)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE 
-            name=VALUES(name), 
-            track_id=VALUES(track_id),
-            duration_ms=VALUES(duration_ms),
-            is_explicit=VALUES(is_explicit),
-            disc_number=VALUES(disc_number),
-            track_number=VALUES(track_number),
-            popularity=VALUES(popularity),
-            album_id=VALUES(album_id),
-            artist_ids=VALUES(artist_ids);
-        """
-        track_list = []
-        for rank, track in top_tracks_of_the_month.top_tracks.items():
-            artist_ids = json.dumps([artist.artist_id for artist in track.artists])
-            track_data = (
-                top_tracks_of_the_month.month, top_tracks_of_the_month.year, rank,
-                track.name, track.track_id, track.duration, track.is_explicit,
-                track.disc_number, track.track_number, track.popularity,
-                track.album.album_id, artist_ids
-            )
-            track_list.append(track_data)
-            logger.debug("  Prepared track #%d: '%s' (id: %s)", rank, track.name, track.track_id)
-
-        logger.debug("Executing batch insert for %d tracks...", len(track_list))
-        self.cursor.executemany(sql, track_list)
-        self.db.commit()
-        logger.info("Tracks insert complete: %d rows affected.", self.cursor.rowcount)
+        """Batch inserts monthly top tracks into the tracks table."""
+        year_month = f"{top_tracks_of_the_month.year:04d}-{top_tracks_of_the_month.month:02d}"
+        logger.info("Inserting top tracks for %s into DynamoDB...", year_month)
+        
+        try:
+            with self.tracks_table.batch_writer() as batch:
+                for rank, track in top_tracks_of_the_month.top_tracks.items():
+                    artist_ids = [artist.artist_id for artist in track.artists]
+                    item = {
+                        'year_month': year_month,
+                        'standing': rank,
+                        'name': track.name,
+                        'track_id': track.track_id,
+                        'duration_ms': track.duration,
+                        'is_explicit': track.is_explicit,
+                        'disc_number': track.disc_number,
+                        'track_number': track.track_number,
+                        'popularity': track.popularity,
+                        'album_id': track.album.album_id,
+                        'artist_ids': artist_ids,
+                        'updated_at': datetime.utcnow().isoformat()
+                    }
+                    batch.put_item(Item=item)
+            logger.info("Tracks batch insert complete.")
+        except Exception as e:
+            logger.error("Error inserting tracks into DynamoDB: %s", e)
+            raise
 
     def insert_top_artists_into_db(self, top_artists_of_the_month: MonthlyTopArtists):
-        logger.info("Inserting top artists for %d/%d into database...",
-                     top_artists_of_the_month.month, top_artists_of_the_month.year)
-        sql = """
-        INSERT INTO artists (month, year, standing, name, artist_id, popularity, genres, images)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE 
-            name=VALUES(name), 
-            artist_id=VALUES(artist_id),
-            popularity=VALUES(popularity),
-            genres=VALUES(genres),
-            images=VALUES(images);
-        """
-        artist_list = []
-        for rank, artist in top_artists_of_the_month.top_artists.items():
-            genres_list = json.dumps(artist.genres)
-            images_list = json.dumps([image.url for image in artist.images])
-            artist_data = (
-                top_artists_of_the_month.month, top_artists_of_the_month.year, rank,
-                artist.name, artist.artist_id, artist.popularity, genres_list, images_list
-            )
-            artist_list.append(artist_data)
-            logger.debug("  Prepared artist #%d: '%s' (id: %s)", rank, artist.name, artist.artist_id)
-
-        logger.debug("Executing batch insert for %d artists...", len(artist_list))
-        self.cursor.executemany(sql, artist_list)
-        self.db.commit()
-        logger.info("Artists insert complete: %d rows affected.", self.cursor.rowcount)
+        """Batch inserts monthly top artists into the artists table."""
+        year_month = f"{top_artists_of_the_month.year:04d}-{top_artists_of_the_month.month:02d}"
+        logger.info("Inserting top artists for %s into DynamoDB...", year_month)
+        
+        try:
+            with self.artists_table.batch_writer() as batch:
+                for rank, artist in top_artists_of_the_month.top_artists.items():
+                    images_list = [image.url for image in artist.images]
+                    item = {
+                        'year_month': year_month,
+                        'standing': rank,
+                        'name': artist.name,
+                        'artist_id': artist.artist_id,
+                        'popularity': artist.popularity,
+                        'genres': artist.genres,
+                        'images': images_list,
+                        'updated_at': datetime.utcnow().isoformat()
+                    }
+                    batch.put_item(Item=item)
+            logger.info("Artists batch insert complete.")
+        except Exception as e:
+            logger.error("Error inserting artists into DynamoDB: %s", e)
+            raise
 
     def insert_top_albums_into_db(self, top_albums_of_the_month: MonthlyTopAlbums):
-        logger.info("Inserting top albums for %d/%d into database...",
-                     top_albums_of_the_month.month, top_albums_of_the_month.year)
-        sql = """
-        INSERT INTO albums (month, year, standing, name, album_id, album_type, release_date, images, artist_ids)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON DUPLICATE KEY UPDATE 
-            name=VALUES(name), 
-            album_id=VALUES(album_id),
-            album_type=VALUES(album_type),
-            release_date=VALUES(release_date),
-            images=VALUES(images),
-            artist_ids=VALUES(artist_ids);
-        """
-        album_list = []
-        for rank, album in top_albums_of_the_month.top_albums.items():
-            images_list = json.dumps([image.url for image in album.images])
-            artist_ids = json.dumps([artist.artist_id for artist in album.artists])
-            album_data = (
-                top_albums_of_the_month.month, top_albums_of_the_month.year, rank,
-                album.name, album.album_id, album.album_type, album.release_date,
-                images_list, artist_ids
-            )
-            album_list.append(album_data)
-            logger.debug("  Prepared album #%d: '%s' (id: %s, type: %s)",
-                         rank, album.name, album.album_id, album.album_type)
-
-        logger.debug("Executing batch insert for %d albums...", len(album_list))
-        self.cursor.executemany(sql, album_list)
-        self.db.commit()
-        logger.info("Albums insert complete: %d rows affected.", self.cursor.rowcount)
+        """Batch inserts monthly top albums into the albums table."""
+        year_month = f"{top_albums_of_the_month.year:04d}-{top_albums_of_the_month.month:02d}"
+        logger.info("Inserting top albums for %s into DynamoDB...", year_month)
+        
+        try:
+            with self.albums_table.batch_writer() as batch:
+                for rank, album in top_albums_of_the_month.top_albums.items():
+                    images_list = [image.url for image in album.images]
+                    artist_ids = [artist.artist_id for artist in album.artists]
+                    item = {
+                        'year_month': year_month,
+                        'standing': rank,
+                        'name': album.name,
+                        'album_id': album.album_id,
+                        'album_type': album.album_type,
+                        'release_date': album.release_date,
+                        'images': images_list,
+                        'artist_ids': artist_ids,
+                        'updated_at': datetime.utcnow().isoformat()
+                    }
+                    batch.put_item(Item=item)
+            logger.info("Albums batch insert complete.")
+        except Exception as e:
+            logger.error("Error inserting albums into DynamoDB: %s", e)
+            raise

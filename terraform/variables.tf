@@ -44,20 +44,21 @@ variable "lambda_runtime" {
 #   aws ec2 describe-subnets --query 'Subnets[*].[SubnetId,VpcId,AvailabilityZone]'
 #   aws ec2 describe-security-groups --query 'SecurityGroups[*].[GroupId,GroupName,VpcId]'
 
-variable "vpc_id" {
-  description = "TODO: The ID of your existing VPC (e.g. vpc-0abc1234def56789)."
-  type        = string
-}
+# DECOMMISSIONED: VPC variables are not needed for DynamoDB.
+# variable "vpc_id" {
+#   description = "TODO: The ID of your existing VPC (e.g. vpc-0abc1234def56789)."
+#   type        = string
+# }
 
-variable "subnet_ids" {
-  description = "TODO: List of private subnet IDs the Lambda runs in (e.g. [\"subnet-aaa\", \"subnet-bbb\"])."
-  type        = list(string)
-}
+# variable "subnet_ids" {
+#   description = "TODO: List of private subnet IDs the Lambda runs in (e.g. [\"subnet-aaa\", \"subnet-bbb\"])."
+#   type        = list(string)
+# }
 
-variable "security_group_ids" {
-  description = "TODO: List of security group IDs for the Lambda (e.g. [\"sg-0abc1234\"])."
-  type        = list(string)
-}
+# variable "security_group_ids" {
+#   description = "TODO: List of security group IDs for the Lambda (e.g. [\"sg-0abc1234\"])."
+#   type        = list(string)
+# }
 
 # --- Spotify API ---
 
@@ -79,34 +80,34 @@ variable "spotify_redirect_uri" {
 }
 
 # --- Database ---
+# DECOMMISSIONED: MySQL database variables are not needed for DynamoDB.
+# variable "db_host" {
+#   description = "MySQL database hostname."
+#   type        = string
+# }
 
-variable "db_host" {
-  description = "MySQL database hostname."
-  type        = string
-}
+# variable "db_username" {
+#   description = "MySQL database username."
+#   type        = string
+# }
 
-variable "db_username" {
-  description = "MySQL database username."
-  type        = string
-}
+# variable "db_password" {
+#   description = "MySQL database password."
+#   type        = string
+#   sensitive   = true
+# }
 
-variable "db_password" {
-  description = "MySQL database password."
-  type        = string
-  sensitive   = true
-}
+# variable "db_name" {
+#   description = "MySQL database name."
+#   type        = string
+#   default     = "spotify_stats"
+# }
 
-variable "db_name" {
-  description = "MySQL database name."
-  type        = string
-  default     = "spotify_stats"
-}
-
-variable "db_port" {
-  description = "MySQL database port."
-  type        = string
-  default     = "3306"
-}
+# variable "db_port" {
+#   description = "MySQL database port."
+#   type        = string
+#   default     = "3306"
+# }
 
 # --- EventBridge Schedule ---
 

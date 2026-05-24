@@ -24,11 +24,11 @@ resource "aws_iam_role" "lambda_execution_role" {
 }
 
 # ---------- Managed policy: VPC access ----------
-# Required so the Lambda can create ENIs in your VPC to reach RDS.
-resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
-  role       = aws_iam_role.lambda_execution_role.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
-}
+# DECOMMISSIONED: DynamoDB does not require VPC access.
+# resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
+#   role       = aws_iam_role.lambda_execution_role.name
+#   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+# }
 
 # ---------- Custom policy: CloudWatch Logs ----------
 data "aws_iam_policy_document" "lambda_logging" {
@@ -53,4 +53,59 @@ resource "aws_iam_policy" "lambda_logging" {
 resource "aws_iam_role_policy_attachment" "lambda_logging" {
   role       = aws_iam_role.lambda_execution_role.name
   policy_arn = aws_iam_policy.lambda_logging.arn
+}
+
+# ---------- Custom policy: DynamoDB access ----------
+data "aws_iam_policy_document" "lambda_dynamodb" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem",
+      "dynamodb:DeleteItem",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:Query",
+      "dynamodb:Scan"
+    ]
+    resources = [
+      aws_dynamodb_table.tracks.arn,
+      aws_dynamodb_table.artists.arn,
+      aws_dynamodb_table.albums.arn
+    ]
+  }
+}
+
+resource "aws_iam_policy" "lambda_dynamodb" {
+  name   = "${var.lambda_function_name}-dynamodb"
+  policy = data.aws_iam_policy_document.lambda_dynamodb.json
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_dynamodb" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_dynamodb.arn
+}
+
+# ---------- Custom policy: Secrets Manager access ----------
+data "aws_iam_policy_document" "lambda_secrets" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue"
+    ]
+    resources = [
+      aws_secretsmanager_secret.spotify_refresh_token.arn
+    ]
+  }
+}
+
+resource "aws_iam_policy" "lambda_secrets" {
+  name   = "${var.lambda_function_name}-secrets"
+  policy = data.aws_iam_policy_document.lambda_secrets.json
+}
+
+resource "aws_iam_role_policy_attachment" "lambda_secrets" {
+  role       = aws_iam_role.lambda_execution_role.name
+  policy_arn = aws_iam_policy.lambda_secrets.arn
 }

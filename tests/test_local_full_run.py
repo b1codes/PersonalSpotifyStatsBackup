@@ -89,21 +89,22 @@ def main():
 
     spotify_vars = ["CLIENT_ID", "CLIENT_SECRET", "REDIRECT_URI", "SECRET_NAME",
                     "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_DEFAULT_REGION"]
-    db_vars = ["DB_HOST", "DB_USERNAME", "DB_PASSWORD", "DB_NAME", "DB_PORT"]
+    db_vars = ["DYNAMODB_TABLE_TRACKS", "DYNAMODB_TABLE_ARTISTS", "DYNAMODB_TABLE_ALBUMS"]
 
-    all_vars = spotify_vars if dry_run else spotify_vars + db_vars
+    all_vars = spotify_vars
     missing = [var for var in all_vars if not os.getenv(var)]
     if missing:
         logger.error("Missing required environment variables: %s", ", ".join(missing))
         sys.exit(1)
     logger.info("✅ All required environment variables are present.")
 
-    if dry_run:
-        missing_db = [var for var in db_vars if not os.getenv(var)]
-        if missing_db:
-            logger.info("  (DB vars not checked in dry-run mode: %s)", ", ".join(missing_db))
-        else:
-            logger.info("  (DB vars are also set — you could use --live to write.)")
+    # Show DynamoDB variables status (they are optional and will default if not set)
+    set_db_vars = [var for var in db_vars if os.getenv(var)]
+    unset_db_vars = [var for var in db_vars if not os.getenv(var)]
+    if set_db_vars:
+        logger.info("  DynamoDB tables set in environment: %s", ", ".join(set_db_vars))
+    if unset_db_vars:
+        logger.info("  DynamoDB tables not set in environment (will use defaults): %s", ", ".join(unset_db_vars))
 
     # ── Step 2: Initialize Spotify API Manager ─────────────────────────────────
     logger.info("-" * 60)
