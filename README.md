@@ -59,7 +59,6 @@ graph TD
 ```
 .
 ├── Managers/
-│   ├── SpotifyAuthorizationManager.py  # Handles Spotify API authentication and token management.
 │   ├── SpotifyAPIManager.py            # Manages calls to the Spotify Web API to fetch data.
 │   └── DatabaseManager.py              # Handles the connection and data insertion into the MySQL database.
 ├── Types/

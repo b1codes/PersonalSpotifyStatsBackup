@@ -87,7 +87,6 @@ data "archive_file" "lambda_code" {
     "build",
     "terraform",
     "main.py",
-    "build_lambda_zip.sh",
     "SpotifyRefreshTokenGenerator.py",
     "Bastion Key.pem",
     "sample.env",
@@ -153,6 +152,7 @@ resource "aws_lambda_function" "spotify_backup" {
       DYNAMODB_TABLE_TRACKS  = aws_dynamodb_table.tracks.name
       DYNAMODB_TABLE_ARTISTS = aws_dynamodb_table.artists.name
       DYNAMODB_TABLE_ALBUMS  = aws_dynamodb_table.albums.name
+      DYNAMODB_TABLE_GENRES  = aws_dynamodb_table.genres.name
     }
   }
 
@@ -232,6 +232,27 @@ resource "aws_dynamodb_table" "artists" {
 
 resource "aws_dynamodb_table" "albums" {
   name         = "${var.lambda_function_name}-albums"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "year_month"
+  range_key    = "standing"
+
+  attribute {
+    name = "year_month"
+    type = "S"
+  }
+
+  attribute {
+    name = "standing"
+    type = "N"
+  }
+
+  tags = {
+    Project = var.lambda_function_name
+  }
+}
+
+resource "aws_dynamodb_table" "genres" {
+  name         = "${var.lambda_function_name}-genres"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "year_month"
   range_key    = "standing"

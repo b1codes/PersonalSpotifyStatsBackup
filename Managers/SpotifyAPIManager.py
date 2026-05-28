@@ -21,7 +21,7 @@ CLIENT_SECRET = os.getenv('CLIENT_SECRET')
 REDIRECT_URI = os.getenv('REDIRECT_URI')
     
 class SpotifyAPIManager():
-    def __init__(self, database_manager=None):
+    def __init__(self, database_manager=None, dry_run=False):
         logger.info("Initializing SpotifyAPIManager...")
         self.state = self.generate_random_state(16)
         self.auth_code = ''
@@ -29,6 +29,7 @@ class SpotifyAPIManager():
         self.token_type = ''
         self.refresh_token = ''
         self.database_manager = database_manager
+        self.dry_run = dry_run
 
         logger.debug("CLIENT_ID loaded: %s", "Yes" if CLIENT_ID else "MISSING")
         logger.debug("CLIENT_SECRET loaded: %s", "Yes" if CLIENT_SECRET else "MISSING")
@@ -130,9 +131,11 @@ class SpotifyAPIManager():
                 logger.info("Access token obtained successfully via refresh token.")
                 logger.debug("Token type: %s", self.token_type)
                 if 'refresh_token' in access_json:
-                    logger.info("New refresh token received from Spotify — updating in database.")
                     self.refresh_token = access_json['refresh_token']
-                    if self.database_manager:
+                    if self.dry_run:
+                        logger.info("[DRY RUN] New refresh token received — skipping Secrets Manager update.")
+                    elif self.database_manager:
+                        logger.info("New refresh token received from Spotify — updating in Secrets Manager.")
                         self.database_manager.update_refresh_token(self.refresh_token)
                     else:
                         logger.warning("No database manager provided — cannot persist rotated refresh token!")

@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 
 from Types.MonthlyTopAlbums import MonthlyTopAlbums
 from Types.MonthlyTopArtists import MonthlyTopArtists
+from Types.MonthlyTopGenres import MonthlyTopGenres
 from Types.MonthlyTopTracks import MonthlyTopTracks
 
 logger = logging.getLogger(__name__)
@@ -23,11 +24,13 @@ class DatabaseManager:
         self.tracks_table_name = os.getenv('DYNAMODB_TABLE_TRACKS', 'PersonalSpotifyStatsBackup-tracks')
         self.artists_table_name = os.getenv('DYNAMODB_TABLE_ARTISTS', 'PersonalSpotifyStatsBackup-artists')
         self.albums_table_name = os.getenv('DYNAMODB_TABLE_ALBUMS', 'PersonalSpotifyStatsBackup-albums')
+        self.genres_table_name = os.getenv('DYNAMODB_TABLE_GENRES', 'PersonalSpotifyStatsBackup-genres')
 
         logger.debug("SECRET_NAME: %s", self.secret_name)
         logger.debug("DYNAMODB_TABLE_TRACKS: %s", self.tracks_table_name)
         logger.debug("DYNAMODB_TABLE_ARTISTS: %s", self.artists_table_name)
         logger.debug("DYNAMODB_TABLE_ALBUMS: %s", self.albums_table_name)
+        logger.debug("DYNAMODB_TABLE_GENRES: %s", self.genres_table_name)
 
         try:
             self.dynamodb = boto3.resource('dynamodb', region_name=region_name)
@@ -36,6 +39,7 @@ class DatabaseManager:
             self.tracks_table = self.dynamodb.Table(self.tracks_table_name)
             self.artists_table = self.dynamodb.Table(self.artists_table_name)
             self.albums_table = self.dynamodb.Table(self.albums_table_name)
+            self.genres_table = self.dynamodb.Table(self.genres_table_name)
             logger.info("Successfully initialized AWS DynamoDB and Secrets Manager interfaces.")
         except Exception as e:
             logger.error("Failed to connect to AWS services: %s", e)
@@ -169,4 +173,25 @@ class DatabaseManager:
             logger.info("Albums batch insert complete.")
         except Exception as e:
             logger.error("Error inserting albums into DynamoDB: %s", e)
+            raise
+
+    def insert_top_genres_into_db(self, top_genres: MonthlyTopGenres):
+        """Batch inserts monthly top genres into the genres table."""
+        year_month = f"{top_genres.year:04d}-{top_genres.month:02d}"
+        logger.info("Inserting top genres for %s into DynamoDB...", year_month)
+
+        try:
+            with self.genres_table.batch_writer() as batch:
+                for rank, entry in top_genres.top_genres.items():
+                    item = {
+                        'year_month': year_month,
+                        'standing': rank,
+                        'genre': entry['genre'],
+                        'count': entry['count'],
+                        'updated_at': datetime.utcnow().isoformat()
+                    }
+                    batch.put_item(Item=item)
+            logger.info("Genres batch insert complete.")
+        except Exception as e:
+            logger.error("Error inserting genres into DynamoDB: %s", e)
             raise

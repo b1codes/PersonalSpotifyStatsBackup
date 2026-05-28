@@ -71,7 +71,8 @@ data "aws_iam_policy_document" "lambda_dynamodb" {
     resources = [
       aws_dynamodb_table.tracks.arn,
       aws_dynamodb_table.artists.arn,
-      aws_dynamodb_table.albums.arn
+      aws_dynamodb_table.albums.arn,
+      aws_dynamodb_table.genres.arn
     ]
   }
 }

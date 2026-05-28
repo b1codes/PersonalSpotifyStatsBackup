@@ -36,30 +36,6 @@ variable "lambda_runtime" {
   default     = "python3.9"
 }
 
-# --- Networking (VPC) ---
-# TODO: Fill these in with your actual AWS VPC/subnet/security group IDs.
-# You can find these in the AWS Console under VPC > Subnets and Security Groups,
-# or by running:
-#   aws ec2 describe-vpcs --query 'Vpcs[*].[VpcId,Tags]'
-#   aws ec2 describe-subnets --query 'Subnets[*].[SubnetId,VpcId,AvailabilityZone]'
-#   aws ec2 describe-security-groups --query 'SecurityGroups[*].[GroupId,GroupName,VpcId]'
-
-# DECOMMISSIONED: VPC variables are not needed for DynamoDB.
-# variable "vpc_id" {
-#   description = "TODO: The ID of your existing VPC (e.g. vpc-0abc1234def56789)."
-#   type        = string
-# }
-
-# variable "subnet_ids" {
-#   description = "TODO: List of private subnet IDs the Lambda runs in (e.g. [\"subnet-aaa\", \"subnet-bbb\"])."
-#   type        = list(string)
-# }
-
-# variable "security_group_ids" {
-#   description = "TODO: List of security group IDs for the Lambda (e.g. [\"sg-0abc1234\"])."
-#   type        = list(string)
-# }
-
 # --- Spotify API ---
 
 variable "spotify_client_id" {
