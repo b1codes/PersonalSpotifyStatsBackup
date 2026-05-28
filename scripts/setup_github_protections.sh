@@ -38,7 +38,7 @@ run_api() {
 # Wraps `gh repo edit` for the detected repo. Pass flags as arguments.
 run_repo_edit() {
   if [ "$DRY_RUN" = true ]; then
-    echo "[DRY RUN] gh repo edit $OWNER/$REPO $*"
+    echo "[DRY RUN] gh repo edit $OWNER/$REPO" "$@"
     return
   fi
   gh repo edit "$OWNER/$REPO" "$@"
@@ -64,6 +64,11 @@ REMOTE_URL=$(git remote get-url origin 2>/dev/null) || {
 OWNER_REPO=$(echo "$REMOTE_URL" | sed -E 's|.*github\.com[:/]||; s|\.git$||')
 OWNER=$(echo "$OWNER_REPO" | cut -d/ -f1)
 REPO=$(echo "$OWNER_REPO" | cut -d/ -f2)
+
+if [[ -z "$OWNER" || -z "$REPO" || "$OWNER_REPO" == "$REMOTE_URL" ]]; then
+  echo "Error: Could not parse GitHub owner/repo from remote URL: $REMOTE_URL" >&2
+  exit 1
+fi
 
 echo "Target: $OWNER/$REPO"
 [ "$DRY_RUN" = true ] && echo "(dry-run — no changes will be made)"
