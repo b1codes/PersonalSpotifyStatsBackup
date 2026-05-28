@@ -31,3 +31,8 @@ output "lambda_execution_role_arn" {
   description = "ARN of the Lambda execution IAM role."
   value       = aws_iam_role.lambda_execution_role.arn
 }
+
+output "dynamodb_genres_table_name" {
+  description = "Name of the DynamoDB genres table."
+  value       = aws_dynamodb_table.genres.name
+}

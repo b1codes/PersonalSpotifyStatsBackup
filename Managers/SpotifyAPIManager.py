@@ -21,7 +21,7 @@ CLIENT_SECRET = os.getenv('CLIENT_SECRET')
 REDIRECT_URI = os.getenv('REDIRECT_URI')
     
 class SpotifyAPIManager():
-    def __init__(self, database_manager):
+    def __init__(self, database_manager=None, dry_run=False):
         logger.info("Initializing SpotifyAPIManager...")
         self.state = self.generate_random_state(16)
         self.auth_code = ''
@@ -29,18 +29,25 @@ class SpotifyAPIManager():
         self.token_type = ''
         self.refresh_token = ''
         self.database_manager = database_manager
+        self.dry_run = dry_run
 
         logger.debug("CLIENT_ID loaded: %s", "Yes" if CLIENT_ID else "MISSING")
         logger.debug("CLIENT_SECRET loaded: %s", "Yes" if CLIENT_SECRET else "MISSING")
         logger.debug("REDIRECT_URI loaded: %s", REDIRECT_URI or "MISSING")
 
-        logger.info("Retrieving refresh token from database...")
-        self.refresh_token = self.database_manager.get_refresh_token()
+        logger.info("Retrieving refresh token...")
+        if self.database_manager:
+            self.refresh_token = self.database_manager.get_refresh_token()
+        else:
+            self.refresh_token = os.getenv('SPOTIFY_REFRESH_TOKEN')
+            if self.refresh_token:
+                logger.info("Retrieved refresh token from environment variable.")
+
         if self.refresh_token:
             masked_token = self.refresh_token[:8] + "..." + self.refresh_token[-4:] if len(self.refresh_token) > 12 else "***"
             logger.debug("Refresh token retrieved (masked): %s", masked_token)
         else:
-            logger.error("Failed to retrieve refresh token from database!")
+            logger.error("Failed to retrieve refresh token!")
 
         logger.info("Exchanging refresh token for access token...")
         self.get_access_token_from_refresh_token()
@@ -124,9 +131,14 @@ class SpotifyAPIManager():
                 logger.info("Access token obtained successfully via refresh token.")
                 logger.debug("Token type: %s", self.token_type)
                 if 'refresh_token' in access_json:
-                    logger.info("New refresh token received from Spotify — updating in database.")
                     self.refresh_token = access_json['refresh_token']
-                    self.database_manager.update_refresh_token(self.refresh_token)
+                    if self.dry_run:
+                        logger.info("[DRY RUN] New refresh token received — skipping Secrets Manager update.")
+                    elif self.database_manager:
+                        logger.info("New refresh token received from Spotify — updating in Secrets Manager.")
+                        self.database_manager.update_refresh_token(self.refresh_token)
+                    else:
+                        logger.warning("No database manager provided — cannot persist rotated refresh token!")
                 else:
                     logger.debug("No new refresh token in response (existing one is still valid).")
             else:

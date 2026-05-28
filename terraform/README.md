@@ -8,11 +8,9 @@ Infrastructure-as-code for deploying the Spotify stats backup Lambda function to
 |---|---|
 | **Lambda Function** | `PersonalSpotifyStatsBackup` — runs your backup code |
 | **Lambda Layer** | Python dependencies from `requirements.txt` |
-| **IAM Role + Policies** | Execution role with VPC access and CloudWatch logging |
+| **IAM Role + Policies** | Execution role with DynamoDB, Secrets Manager, and CloudWatch logging access |
 | **EventBridge Rule** | Monthly schedule trigger (1st of each month) |
 | **CloudWatch Log Group** | Lambda execution logs with configurable retention |
-
-> **Note**: Your existing VPC, subnets, security groups, and RDS instance are **not** managed by Terraform. They are referenced as variables only.
 
 ## Prerequisites
 
@@ -25,19 +23,16 @@ Infrastructure-as-code for deploying the Spotify stats backup Lambda function to
 ```bash
 cd terraform/
 
-# 1. Fill in your VPC details in terraform.tfvars
-#    Look for the TODO comments and replace the placeholder values
-
-# 2. Initialize Terraform (downloads providers)
+# 1. Initialize Terraform (downloads providers)
 terraform init
 
-# 3. Import your existing Lambda function into Terraform state
+# 2. Import your existing Lambda function into Terraform state
 terraform import aws_lambda_function.spotify_backup PersonalSpotifyStatsBackup
 
-# 4. Preview what Terraform will do
+# 3. Preview what Terraform will do
 terraform plan
 
-# 5. Apply changes (creates/updates resources)
+# 4. Apply changes (creates/updates resources)
 terraform apply
 ```
 

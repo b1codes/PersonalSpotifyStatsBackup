@@ -87,7 +87,6 @@ data "archive_file" "lambda_code" {
     "build",
     "terraform",
     "main.py",
-    "build_lambda_zip.sh",
     "SpotifyRefreshTokenGenerator.py",
     "Bastion Key.pem",
     "sample.env",
@@ -144,21 +143,16 @@ resource "aws_lambda_function" "spotify_backup" {
 
   layers = [aws_lambda_layer_version.dependencies.arn]
 
-  vpc_config {
-    subnet_ids         = var.subnet_ids
-    security_group_ids = var.security_group_ids
-  }
-
   environment {
     variables = {
-      CLIENT_ID     = var.spotify_client_id
-      CLIENT_SECRET = var.spotify_client_secret
-      REDIRECT_URI  = var.spotify_redirect_uri
-      DB_HOST       = var.db_host
-      DB_USERNAME   = var.db_username
-      DB_PASSWORD   = var.db_password
-      DB_NAME       = var.db_name
-      DB_PORT       = var.db_port
+      CLIENT_ID              = var.spotify_client_id
+      CLIENT_SECRET          = var.spotify_client_secret
+      REDIRECT_URI           = var.spotify_redirect_uri
+      SECRET_NAME            = aws_secretsmanager_secret.spotify_refresh_token.name
+      DYNAMODB_TABLE_TRACKS  = aws_dynamodb_table.tracks.name
+      DYNAMODB_TABLE_ARTISTS = aws_dynamodb_table.artists.name
+      DYNAMODB_TABLE_ALBUMS  = aws_dynamodb_table.albums.name
+      DYNAMODB_TABLE_GENRES  = aws_dynamodb_table.genres.name
     }
   }
 
@@ -174,6 +168,104 @@ resource "aws_lambda_function" "spotify_backup" {
 resource "aws_cloudwatch_log_group" "lambda_logs" {
   name              = "/aws/lambda/${var.lambda_function_name}"
   retention_in_days = var.log_retention_days
+
+  tags = {
+    Project = var.lambda_function_name
+  }
+}
+
+# =============================================================================
+# DynamoDB Tables — Backup Storage Backend
+# =============================================================================
+
+resource "aws_secretsmanager_secret" "spotify_refresh_token" {
+  name                    = "${var.lambda_function_name}-refresh-token"
+  description             = "Spotify Refresh Token for stats backup"
+  recovery_window_in_days = 0
+
+  tags = {
+    Project = var.lambda_function_name
+  }
+}
+
+resource "aws_dynamodb_table" "tracks" {
+  name         = "${var.lambda_function_name}-tracks"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "year_month"
+  range_key    = "standing"
+
+  attribute {
+    name = "year_month"
+    type = "S"
+  }
+
+  attribute {
+    name = "standing"
+    type = "N"
+  }
+
+  tags = {
+    Project = var.lambda_function_name
+  }
+}
+
+resource "aws_dynamodb_table" "artists" {
+  name         = "${var.lambda_function_name}-artists"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "year_month"
+  range_key    = "standing"
+
+  attribute {
+    name = "year_month"
+    type = "S"
+  }
+
+  attribute {
+    name = "standing"
+    type = "N"
+  }
+
+  tags = {
+    Project = var.lambda_function_name
+  }
+}
+
+resource "aws_dynamodb_table" "albums" {
+  name         = "${var.lambda_function_name}-albums"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "year_month"
+  range_key    = "standing"
+
+  attribute {
+    name = "year_month"
+    type = "S"
+  }
+
+  attribute {
+    name = "standing"
+    type = "N"
+  }
+
+  tags = {
+    Project = var.lambda_function_name
+  }
+}
+
+resource "aws_dynamodb_table" "genres" {
+  name         = "${var.lambda_function_name}-genres"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "year_month"
+  range_key    = "standing"
+
+  attribute {
+    name = "year_month"
+    type = "S"
+  }
+
+  attribute {
+    name = "standing"
+    type = "N"
+  }
 
   tags = {
     Project = var.lambda_function_name

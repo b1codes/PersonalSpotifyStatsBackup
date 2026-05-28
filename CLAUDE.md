@@ -34,8 +34,6 @@ terraform plan
 terraform apply
 ```
 
-`build_lambda_zip.sh` is **deprecated** — Terraform packages the code automatically.
-
 ## Architecture
 
 **Execution flow** (`lambda_function.py:lambda_handler`):
@@ -50,7 +48,6 @@ terraform apply
 **Manager responsibilities:**
 - `Managers/DatabaseManager.py` — MySQL connection, CRUD for the `config` table (refresh token), and batch inserts for the three stat tables
 - `Managers/SpotifyAPIManager.py` — Spotify OAuth (Authorization Code + Refresh Token flows), `get_top_tracks()`, `get_top_artists()`
-- `Managers/SpotifyAuthorizationManager.py` — currently commented out / unused
 
 **Types** (`Types/`) are plain dataclasses: `Track`, `Artist`, `Album`, `Image`, `MonthlyTopTracks`, `MonthlyTopArtists`, `MonthlyTopAlbums`.
 

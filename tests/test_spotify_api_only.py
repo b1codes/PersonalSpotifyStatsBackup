@@ -137,10 +137,9 @@ def main():
         if monthly_albums.top_albums:
             logger.info("")
             logger.info("  Top Albums (by track count):")
-            for rank, albums in sorted(monthly_albums.top_albums.items(), reverse=True):
-                for album in albums:
-                    album_artists = ", ".join(a.name for a in album.artists)
-                    logger.info("    [%d tracks] %s — %s", rank, album.name, album_artists)
+            for rank, album in sorted(monthly_albums.top_albums.items()):
+                album_artists = ", ".join(a.name for a in album.artists)
+                logger.info("    #%d  %s — %s", rank, album.name, album_artists)
         else:
             logger.info("  No albums with multiple tracks found (only 1 track per album).")
 
@@ -190,15 +189,14 @@ def main():
         logger.info("  Wrote test_output_artists.json (%d artists)", len(artists_data))
 
         albums_data = []
-        for rank, albums in monthly_albums.top_albums.items():
-            for album in albums:
-                albums_data.append({
-                    "rank_track_count": rank,
-                    "name": album.name,
-                    "album_id": album.album_id,
-                    "album_type": album.album_type,
-                    "release_date": album.release_date,
-                })
+        for rank, album in monthly_albums.top_albums.items():
+            albums_data.append({
+                "rank": rank,
+                "name": album.name,
+                "album_id": album.album_id,
+                "album_type": album.album_type,
+                "release_date": album.release_date,
+            })
         with open("test_output_albums.json", "w") as f:
             json.dump(albums_data, f, indent=2)
         logger.info("  Wrote test_output_albums.json (%d albums)", len(albums_data))

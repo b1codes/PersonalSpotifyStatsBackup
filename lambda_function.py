@@ -15,53 +15,69 @@ from Managers.DatabaseManager import DatabaseManager
 from Managers.SpotifyAPIManager import SpotifyAPIManager
 from Types.MonthlyTopAlbums import MonthlyTopAlbums
 from Types.MonthlyTopArtists import MonthlyTopArtists
+from Types.MonthlyTopGenres import MonthlyTopGenres
 from Types.MonthlyTopTracks import MonthlyTopTracks
 
 def lambda_handler(event, context):
     """
-    This function, triggered by AWS, fetches monthly Spotify stats and
-    stores them in a MySQL database.
+    Triggered monthly by EventBridge. Fetches top Spotify stats and stores
+    them in DynamoDB.
+
+    Dry-run mode: pass {"dry_run": true} (or {"dry-run": true}) in the event
+    to authenticate, fetch, and process data without writing to DynamoDB or
+    rotating the Spotify refresh token in Secrets Manager.
     """
-    logger.info("=== Starting Spotify stats backup (Lambda) ===")
+    dry_run = bool(event.get('dry_run', False) or event.get('dry-run', False))
+
+    mode_label = "DRY RUN" if dry_run else "LIVE"
+    logger.info("=== Starting Spotify stats backup (Lambda) [%s] ===", mode_label)
+    if dry_run:
+        logger.info("[DRY RUN] Database writes and Secrets Manager updates are disabled.")
 
     try:
         # 1. Initialize Managers
-        # DatabaseManager connects to MySQL; SpotifyAPIManager uses it to store/retrieve the refresh token.
         database_manager = DatabaseManager()
-        spotify_api_manager = SpotifyAPIManager(database_manager)
+        spotify_api_manager = SpotifyAPIManager(database_manager, dry_run=dry_run)
         logger.info("Successfully initialized Database and Spotify API managers.")
 
         # 2. Fetch Data from Spotify
-        # Retrieves your top 50 tracks and artists from the last month.
         logger.info("Fetching top tracks and artists from Spotify API...")
         top_tracks_obj = spotify_api_manager.get_top_tracks()
         top_artists_obj = spotify_api_manager.get_top_artists()
 
         if top_tracks_obj is None or top_artists_obj is None:
-            # This handles cases where the Spotify API might fail.
             raise Exception("Failed to fetch data from Spotify. The API response was empty.")
 
         logger.info("Received %d tracks and %d artists from Spotify.",
                      len(top_tracks_obj), len(top_artists_obj))
 
         # 3. Process Data into Monthly Snapshots
-        # This organizes the raw data into the monthly formats you defined.
         logger.info("Processing data into monthly snapshots...")
         last_month_top_tracks = MonthlyTopTracks(top_tracks_obj)
         last_month_top_artists = MonthlyTopArtists(top_artists_obj)
         last_month_top_albums = MonthlyTopAlbums(top_tracks_obj)
+        last_month_top_genres = MonthlyTopGenres(top_artists_obj)
 
-        logger.info("Snapshots created — Tracks: %d, Artists: %d, Albums: %d",
+        logger.info("Snapshots created — Tracks: %d, Artists: %d, Albums: %d, Genres: %d",
                      len(last_month_top_tracks.top_tracks),
                      len(last_month_top_artists.top_artists),
-                     len(last_month_top_albums.top_albums))
+                     len(last_month_top_albums.top_albums),
+                     len(last_month_top_genres.top_genres))
 
-        # 4. Insert Data into the Database
-        # Commits the new snapshots to your MySQL database.
+        # 4. Insert Data into DynamoDB (skipped in dry-run mode)
+        if dry_run:
+            logger.info("[DRY RUN] Skipping all DynamoDB writes.")
+            logger.info("=== Spotify stats backup finished (DRY RUN — no changes made) ===")
+            return {
+                'statusCode': 200,
+                'body': json.dumps('Spotify stats backup completed successfully (Dry Run - No database changes made).')
+            }
+
         logger.info("Inserting data into the database...")
         database_manager.insert_top_artists_into_db(last_month_top_artists)
         database_manager.insert_top_tracks_into_db(last_month_top_tracks)
         database_manager.insert_top_albums_into_db(last_month_top_albums)
+        database_manager.insert_top_genres_into_db(last_month_top_genres)
 
         logger.info("=== Spotify stats backup finished successfully! ===")
         return {
@@ -70,7 +86,6 @@ def lambda_handler(event, context):
         }
 
     except Exception as e:
-        # Captures any errors during the process for easier debugging in CloudWatch.
         logger.error("An error occurred during execution: %s", e, exc_info=True)
         return {
             'statusCode': 500,
