@@ -89,4 +89,4 @@ run_api PUT "repos/$OWNER/$REPO/branches/main/protection" '{
   "allow_force_pushes": false,
   "allow_deletions": false
 }'
-log "Branch protection applied to main"
+[ "$DRY_RUN" = true ] || log "Branch protection applied to main"
