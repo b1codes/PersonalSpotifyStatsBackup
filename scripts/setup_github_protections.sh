@@ -19,7 +19,7 @@ run_api() {
   if [ "$DRY_RUN" = true ]; then
     echo "[DRY RUN] gh api --method $method $endpoint"
     [ -n "$payload" ] && echo "          $payload"
-    return
+    return 0
   fi
   if [ -n "$payload" ]; then
     echo "$payload" | gh api \
@@ -90,3 +90,32 @@ run_api PUT "repos/$OWNER/$REPO/branches/main/protection" '{
   "allow_deletions": false
 }'
 [ "$DRY_RUN" = true ] || log "Branch protection applied to main"
+
+# =============================================================================
+# Security Features
+# =============================================================================
+
+run_api PUT "repos/$OWNER/$REPO/vulnerability-alerts"
+[ "$DRY_RUN" = true ] || log "Dependabot vulnerability alerts enabled"
+
+run_api PUT "repos/$OWNER/$REPO/automated-security-fixes"
+[ "$DRY_RUN" = true ] || log "Dependabot security updates enabled"
+
+# Secret scanning is free on public repos. Private repos require GitHub Advanced Security.
+# This call is intentionally not routed through run_api so failures warn rather than abort.
+if [ "$DRY_RUN" = true ]; then
+  echo "[DRY RUN] gh api --method PATCH repos/$OWNER/$REPO (security_and_analysis)"
+else
+  echo '{
+    "security_and_analysis": {
+      "secret_scanning": {"status": "enabled"},
+      "secret_scanning_push_protection": {"status": "enabled"}
+    }
+  }' | gh api \
+    --method PATCH \
+    --header "Accept: application/vnd.github+json" \
+    "repos/$OWNER/$REPO" \
+    --input - > /dev/null \
+  || warn "Secret scanning unavailable — requires GitHub Advanced Security on private repos"
+fi
+[ "$DRY_RUN" = true ] || log "Secret scanning and push protection configured"
