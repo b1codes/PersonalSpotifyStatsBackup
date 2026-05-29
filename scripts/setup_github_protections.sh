@@ -95,11 +95,13 @@ run_api PUT "repos/$OWNER/$REPO/branches/main/protection" '{
 # Security Features
 # =============================================================================
 
-run_api PUT "repos/$OWNER/$REPO/vulnerability-alerts"
-[ "$DRY_RUN" = true ] || log "Dependabot vulnerability alerts enabled"
+run_api PUT "repos/$OWNER/$REPO/vulnerability-alerts" \
+  && { [ "$DRY_RUN" = true ] || log "Dependabot vulnerability alerts enabled"; } \
+  || warn "Dependabot alerts unavailable — may require org-level configuration"
 
-run_api PUT "repos/$OWNER/$REPO/automated-security-fixes"
-[ "$DRY_RUN" = true ] || log "Dependabot security updates enabled"
+run_api PUT "repos/$OWNER/$REPO/automated-security-fixes" \
+  && { [ "$DRY_RUN" = true ] || log "Dependabot security updates enabled"; } \
+  || warn "Dependabot security updates unavailable — may require org-level configuration"
 
 # Secret scanning is free on public repos. Private repos require GitHub Advanced Security.
 # This call is intentionally not routed through run_api so failures warn rather than abort.
