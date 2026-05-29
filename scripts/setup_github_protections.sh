@@ -73,3 +73,20 @@ fi
 echo "Target: $OWNER/$REPO"
 [ "$DRY_RUN" = true ] && echo "(dry-run — no changes will be made)"
 echo ""
+
+# =============================================================================
+# Branch Protection
+# =============================================================================
+
+run_api PUT "repos/$OWNER/$REPO/branches/main/protection" '{
+  "required_status_checks": null,
+  "enforce_admins": false,
+  "required_pull_request_reviews": {
+    "required_approving_review_count": 1,
+    "dismiss_stale_reviews": true
+  },
+  "restrictions": null,
+  "allow_force_pushes": false,
+  "allow_deletions": false
+}'
+log "Branch protection applied to main"
