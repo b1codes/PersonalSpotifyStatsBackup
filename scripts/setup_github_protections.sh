@@ -130,8 +130,9 @@ run_repo_edit \
   --delete-branch-on-merge \
   --enable-squash-merge \
   --enable-merge-commit=false \
-  --enable-rebase-merge=false
-[ "$DRY_RUN" = true ] || log "Repo settings: auto-delete branches, squash-only merges"
+  --enable-rebase-merge=false \
+  && { [ "$DRY_RUN" = true ] || log "Repo settings: auto-delete branches, squash-only merges"; } \
+  || warn "Repo settings update failed — check token scopes or repo permissions"
 
 echo ""
 echo "Done. All protections applied to $OWNER/$REPO."
