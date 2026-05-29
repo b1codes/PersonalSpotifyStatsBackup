@@ -118,9 +118,9 @@ else
     --header "Accept: application/vnd.github+json" \
     "repos/$OWNER/$REPO" \
     --input - > /dev/null \
+  && log "Secret scanning and push protection configured" \
   || warn "Secret scanning unavailable — requires GitHub Advanced Security on private repos"
 fi
-[ "$DRY_RUN" = true ] || log "Secret scanning and push protection configured"
 
 # =============================================================================
 # General Repo Settings
