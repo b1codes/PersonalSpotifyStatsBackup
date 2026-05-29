@@ -1,4 +1,4 @@
-python-dotenv==1.0.1
+python-dotenv==1.2.2
 Requests==2.32.4
 boto3==1.28.66
 mysql-connector-python==9.1.0
