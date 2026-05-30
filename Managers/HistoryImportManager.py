@@ -12,6 +12,7 @@ from Types.Image import Image
 from Types.MonthlyTopTracks import MonthlyTopTracks
 from Types.MonthlyTopArtists import MonthlyTopArtists
 from Types.MonthlyTopAlbums import MonthlyTopAlbums
+from Types.MonthlyTopGenres import MonthlyTopGenres
 
 logger = logging.getLogger(__name__)
 
@@ -75,14 +76,18 @@ class HistoryImportManager:
             if period not in monthly_data:
                 monthly_data[period] = {
                     'tracks': Counter(),
-                    'artists': Counter()
+                    'artists': Counter(),
+                    'artist_track_map': {}
                 }
-            
+
             # If we have URI, use it as unique identifier
             track_key = track_id if track_id else f"{track_name}||{artist_name}"
             monthly_data[period]['tracks'][track_key] += 1
             if artist_name:
                 monthly_data[period]['artists'][artist_name] += 1
+            # Track which URIs belong to each artist so we can resolve missing artists later
+            if artist_name and track_id and track_id.startswith('spotify:track:'):
+                monthly_data[period]['artist_track_map'].setdefault(artist_name, set()).add(track_id)
 
         return monthly_data
 
@@ -128,27 +133,66 @@ class HistoryImportManager:
                         new_artists.append(a)
                 track.artists = new_artists
 
-            # Also prepare a list of top 50 Artists for the month based on play counts
-            # (Note: simpler to just use the artists from the top 50 tracks or recalculate)
-            # For now, let's take the top artists from the play count aggregation
-            top_artist_names = [name for name, count in counts['artists'].most_common(limit)]
-            # We need to find the ID for these names. Most will be in our resolved_artists_map.
-            final_top_artists = []
-            for name in top_artist_names:
-                # Find an artist object with this name in our resolved map
-                found = next((a for a in resolved_artists_map.values() if a.name == name), None)
-                if found:
-                    final_top_artists.append(found)
+            # Build a name → Artist lookup from what we already resolved via tracks
+            name_to_artist = {a.name: a for a in resolved_artists_map.values()}
+
+            top_artist_names = [name for name, _ in counts['artists'].most_common(limit)]
+
+            # Find artists in the top list whose metadata we don't have yet
+            missing_names = [name for name in top_artist_names if name not in name_to_artist]
+            if missing_names:
+                artist_track_map = counts.get('artist_track_map', {})
+                # Collect one sample track URI per missing artist
+                sample_track_ids = []
+                for name in missing_names:
+                    uris = artist_track_map.get(name, set())
+                    for uri in uris:
+                        track_id_str = uri.split(':')[-1]
+                        sample_track_ids.append(track_id_str)
+                        break  # one sample per artist is enough
+
+                sample_track_ids = list(set(sample_track_ids))
+                if sample_track_ids:
+                    sample_tracks = []
+                    for i in range(0, len(sample_track_ids), 50):
+                        sample_tracks.extend(
+                            self.spotify_api_manager.get_tracks_batch(sample_track_ids[i:i+50])
+                        )
+
+                    # Extract artist IDs for missing artists from those sample tracks
+                    new_artist_ids = []
+                    for track in sample_tracks:
+                        for artist in track.artists:
+                            if artist.name in missing_names and artist.artist_id not in resolved_artists_map:
+                                new_artist_ids.append(artist.artist_id)
+
+                    new_artist_ids = list(set(new_artist_ids))
+                    if new_artist_ids:
+                        for i in range(0, len(new_artist_ids), 50):
+                            for a in self.spotify_api_manager.get_artists_batch(new_artist_ids[i:i+50]):
+                                resolved_artists_map[a.artist_id] = a
+                                name_to_artist[a.name] = a
+
+                still_missing = [n for n in missing_names if n not in name_to_artist]
+                if still_missing:
+                    logger.warning(
+                        "Could not resolve %d artists for %02d/%d: %s",
+                        len(still_missing), month, year, still_missing[:5]
+                    )
+
+            final_top_artists = [name_to_artist[name] for name in top_artist_names if name in name_to_artist]
             
             # 3. Create Monthly Objects
             top_tracks_obj = MonthlyTopTracks(resolved_tracks, month=month, year=year)
             top_artists_obj = MonthlyTopArtists(final_top_artists, month=month, year=year)
             top_albums_obj = MonthlyTopAlbums(resolved_tracks, month=month, year=year)
+            top_genres_obj = MonthlyTopGenres(final_top_artists, month=month, year=year)
 
             # 4. Insert into DB
             logger.info("Inserting resolved data into database for %02d/%d...", month, year)
             self.database_manager.insert_top_tracks_into_db(top_tracks_obj)
             self.database_manager.insert_top_artists_into_db(top_artists_obj)
             self.database_manager.insert_top_albums_into_db(top_albums_obj)
+            self.database_manager.insert_top_genres_into_db(top_genres_obj)
 
         logger.info("Import process complete.")

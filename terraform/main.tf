@@ -97,6 +97,12 @@ data "archive_file" "lambda_code" {
     ".gemini",
     ".agents",
     "authorization.txt",
+    "spotify_data",
+    "scratch",
+    "docs",
+    "scripts",
+    "import_history.py",
+    "CLAUDE.md",
     # Exclude vendored dependencies (they go in the Layer now)
     "boto3",
     "boto3-1.28.66.dist-info",
