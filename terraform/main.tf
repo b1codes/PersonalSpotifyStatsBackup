@@ -42,11 +42,11 @@ resource "null_resource" "install_dependencies" {
     command = <<-EOT
       rm -rf ${path.module}/layer_build
       mkdir -p ${path.module}/layer_build/python
-      pip install \
+      uv pip install \
         --target ${path.module}/layer_build/python \
         --requirement ${path.module}/../requirements.txt \
-        --quiet \
-        --upgrade
+        --python-version 3.12 \
+        --quiet
     EOT
   }
 }

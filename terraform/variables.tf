@@ -33,7 +33,7 @@ variable "lambda_memory_size" {
 variable "lambda_runtime" {
   description = "Lambda runtime (Python version)."
   type        = string
-  default     = "python3.9"
+  default     = "python3.12"
 }
 
 # --- Spotify API ---
